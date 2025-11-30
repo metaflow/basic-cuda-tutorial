@@ -10,16 +10,25 @@
  */
 
 #include <stdio.h>
+#include <chrono>
 #include <stdlib.h>
 #include <utils.cuh>
+#include <cuda_runtime.h>
+#include <nvtx3/nvToolsExt.h>
 
 // CUDA kernel function to add two vectors
-__global__ void vectorAdd(const float *A, const float *B, float *C, int numElements) {
+__global__ void addGPU(const float *A, const float *B, float *C, int numElements) {
     // Get the unique thread ID, which is the index in the vector
     int i = blockDim.x * blockIdx.x + threadIdx.x;
 
     // Make sure we don't go out of bounds
     if (i < numElements) {
+        C[i] = A[i] + B[i];
+    }
+}
+
+void addCPU(const float *A, const float *B, float *C, int n) {
+    for (int i = 0; i < n; i++) {
         C[i] = A[i] + B[i];
     }
 }
@@ -35,6 +44,7 @@ int main() {
     float *h_A = (float *)malloc(size);
     float *h_B = (float *)malloc(size);
     float *h_C = (float *)malloc(size);
+    float *h_V = (float *)malloc(size);
 
     // Initialize host arrays with random data
     for (int i = 0; i < numElements; ++i) {
@@ -59,17 +69,42 @@ int main() {
     int blocksPerGrid = (numElements + threadsPerBlock - 1) / threadsPerBlock;
     printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
 
-    vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements);
+    cudaEvent_t start, stop;
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&stop));
+    CUDA_CHECK(cudaEventRecord(start));
+
+    addGPU<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements);
+
+    CUDA_CHECK(cudaEventRecord(stop));
 
     // Check for errors in kernel launch
     CUDA_CHECK(cudaGetLastError());
 
+    CUDA_CHECK(cudaEventSynchronize(stop));
+
+    {
+        float ms = 0;
+        cudaEventElapsedTime(&ms, start, stop);
+        printf("kernel execution time: %.3f ms\n", ms);
+    }
+
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
+
     // Copy result back to host
     CUDA_CHECK(cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost));
 
+    {
+        auto cpu_start = std::chrono::high_resolution_clock::now();
+        addCPU(h_A, h_B, h_V, numElements);
+        auto cpu_end = std::chrono::high_resolution_clock::now();
+        printf("CPU execution time: %.3f ms\n",
+               std::chrono::duration<double, std::milli>(cpu_end - cpu_start).count());
+    }
     // Verify the result
     for (int i = 0; i < numElements; ++i) {
-        if (fabs(h_A[i] + h_B[i] - h_C[i]) > 1e-5) {
+        if (fabs(h_V[i] - h_C[i]) > 1e-5) {
             fprintf(stderr, "Result verification failed at element %d!\n", i);
             exit(EXIT_FAILURE);
         }
@@ -85,6 +120,7 @@ int main() {
     free(h_A);
     free(h_B);
     free(h_C);
+    free(h_V);
 
     printf("Done\n");
     return 0;
