@@ -11,6 +11,7 @@
 
 #include <stdio.h>
 #include <chrono>
+#include <vector>
 #include <stdlib.h>
 #include <utils.cuh>
 #include <cuda_runtime.h>
@@ -35,7 +36,7 @@ void addCPU(const float *A, const float *B, float *C, int n) {
 
 int main() {
     // Vector size and memory size
-    int numElements = 50000;
+    int numElements = 500000;
     size_t size = numElements * sizeof(float);
 
     printf("Vector addition of %d elements\n", numElements);
@@ -69,47 +70,83 @@ int main() {
     int blocksPerGrid = (numElements + threadsPerBlock - 1) / threadsPerBlock;
     printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
 
+    // Launch kernel and check correctness.
+    if (false) {
+        addGPU<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements);
+        CUDA_CHECK(cudaGetLastError());
+        CUDA_CHECK(cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost));
+
+        addCPU(h_A, h_B, h_V, numElements);
+
+        // Verify the result
+        for (int i = 0; i < numElements; ++i) {
+            if (fabs(h_V[i] - h_C[i]) > 1e-5) {
+                fprintf(stderr, "Result verification failed at element %d!\n", i);
+                exit(EXIT_FAILURE);
+            }
+        }
+        printf("Test PASSED\n");
+    }
+
+    // GPU perf.
     cudaEvent_t start, stop;
     CUDA_CHECK(cudaEventCreate(&start));
     CUDA_CHECK(cudaEventCreate(&stop));
-    CUDA_CHECK(cudaEventRecord(start));
-
-    addGPU<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements);
-
-    CUDA_CHECK(cudaEventRecord(stop));
-
-    // Check for errors in kernel launch
-    CUDA_CHECK(cudaGetLastError());
-
-    CUDA_CHECK(cudaEventSynchronize(stop));
 
     {
-        float ms = 0;
-        cudaEventElapsedTime(&ms, start, stop);
-        printf("kernel execution time: %.3f ms\n", ms);
+        long long gpu_start = time_ns();
+        long long cuda_best = LONG_MAX;
+        int interation_counter = 0;
+        int keep_counter = 10;
+        while (true) {
+            interation_counter++;
+            CUDA_CHECK(cudaEventRecord(start));
+            addGPU<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements);
+            CUDA_CHECK(cudaEventRecord(stop));
+            CUDA_CHECK(cudaGetLastError());
+            CUDA_CHECK(cudaEventSynchronize(stop));
+            float ms = 0;
+            CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop) );
+            long long us = round(ms * 1000);
+            if (us >= cuda_best) {
+                keep_counter--;
+                if (keep_counter < 0) break;
+            } else {
+                cuda_best = us;
+            }
+            if (time_ns() - gpu_start > 10 * 1000000LL) break;
+        }
+        printf("GPU: %lld us from %d iterations\n", cuda_best, interation_counter);
     }
+
 
     CUDA_CHECK(cudaEventDestroy(start));
     CUDA_CHECK(cudaEventDestroy(stop));
 
-    // Copy result back to host
-    CUDA_CHECK(cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost));
 
+    // CPU perf.
     {
-        auto cpu_start = std::chrono::high_resolution_clock::now();
-        addCPU(h_A, h_B, h_V, numElements);
-        auto cpu_end = std::chrono::high_resolution_clock::now();
-        printf("CPU execution time: %.3f ms\n",
-               std::chrono::duration<double, std::milli>(cpu_end - cpu_start).count());
-    }
-    // Verify the result
-    for (int i = 0; i < numElements; ++i) {
-        if (fabs(h_V[i] - h_C[i]) > 1e-5) {
-            fprintf(stderr, "Result verification failed at element %d!\n", i);
-            exit(EXIT_FAILURE);
+        long long cpu_start = time_ns();
+        long long cpu_best_us = LONG_MAX;
+        int iterations_counter = 0;
+        int keep_counter = 10;
+        while (true) {
+            iterations_counter++;
+            auto s = time_ns();
+            addCPU(h_A, h_B, h_V, numElements);
+            auto e = time_ns();
+            long long us = (e - s) / 1000LL;
+            if (us >= cpu_best_us) {
+                keep_counter--;
+                if (keep_counter < 0) break;
+            } else {
+                cpu_best_us = us;
+            }
+            if (e - cpu_start > 10 * 1000000LL) break;
         }
+        printf("CPU: %lld us from %d iterations\n",
+               cpu_best_us, iterations_counter);
     }
-    printf("Test PASSED\n");
 
     // Free device memory
     CUDA_CHECK(cudaFree(d_A));

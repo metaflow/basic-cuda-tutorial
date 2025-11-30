@@ -13,4 +13,12 @@ do { \
     } \
 } while(0)
 
+long long time_ns() {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  long long t = ts.tv_sec;
+  t = t * 1000000000LL + ts.tv_nsec;
+  return t;
+}
+
 #endif  // LIB_UTILS_H
