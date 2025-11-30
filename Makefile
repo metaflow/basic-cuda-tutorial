@@ -3,7 +3,7 @@ NVCC = nvcc
 # Auto-detect GPU architecture
 ARCH := $(shell $(NVCC) -run ./detect_arch.cu 2>/dev/null || echo "sm_75")
 
-NVCC_FLAGS = -O3 -arch=$(ARCH) -Xcompiler -Wno-error --no-device-link
+NVCC_FLAGS = -O3 -arch=$(ARCH) -Ilib -Xcompiler -Wno-error --no-device-link
 NVCC_DP_FLAGS = -O3 -arch=$(ARCH) -Xcompiler -Wno-error --no-device-link
 NVCC_PROF_FLAGS = -O3 -arch=$(ARCH) -lcupti -lnvToolsExt -Xcompiler -Wno-error --no-device-link
 NVCC_EXT_FLAGS = -O3 -arch=$(ARCH) -ldl -lpthread -Xcompiler -Wno-error --no-device-link
@@ -25,8 +25,8 @@ ptx-demos: ptx_demo device_ptx_demo simple_ptx_demo
 
 detect_arch:
 	@echo "Detected GPU architecture: $(ARCH)"
-	@if [ "$(ARCH)" = "sm_61" ]; then \
-		echo "Using default sm_61 architecture. To use actual GPU architecture:"; \
+	@if [ "$(ARCH)" = "sm_75" ]; then \
+		echo "Using default sm_75 architecture. To use actual GPU architecture:"; \
 		echo "1. Create detect_arch.cu with the code to detect architecture"; \
 		echo "2. Or manually set architecture in Makefile"; \
 	fi
@@ -90,4 +90,4 @@ simple_ptx_demo: simple-device-ptx.cu
 	$(NVCC) $(NVCC_PTX_FLAGS) $< -o $@
 
 clean:
-	rm -f 01-vector-addition 02-ptx-assembly 03-gpu-programming-methods 03-gpu-programming-methods.o 03-gpu-programming-methods-link.o 04-gpu-architecture 05-neural-network 06-cnn-convolution 07-attention-mechanism 08-profiling-tracing 09-gpu-extension 10-cpu-gpu-profiling-boundaries 11-fine-grained-gpu-modifications 12-advanced-gpu-customizations 13-low-latency-gpu-packet-processing 14-cuda-function-annotations 15-opencl-vector-addition ptx_demo device_ptx_demo simple_ptx_demo vector_add.ptx 
+	rm -f 01-vector-addition 02-ptx-assembly 03-gpu-programming-methods 03-gpu-programming-methods.o 03-gpu-programming-methods-link.o 04-gpu-architecture 05-neural-network 06-cnn-convolution 07-attention-mechanism 08-profiling-tracing 09-gpu-extension 10-cpu-gpu-profiling-boundaries 11-fine-grained-gpu-modifications 12-advanced-gpu-customizations 13-low-latency-gpu-packet-processing 14-cuda-function-annotations 15-opencl-vector-addition ptx_demo device_ptx_demo simple_ptx_demo vector_add.ptx
