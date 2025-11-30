@@ -71,7 +71,7 @@ int main() {
     printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
 
     // Launch kernel and check correctness.
-    if (false) {
+    if (true) {
         addGPU<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost));
