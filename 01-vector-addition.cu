@@ -16,6 +16,7 @@
 #include <utils.cuh>
 #include <cuda_runtime.h>
 #include <nvtx3/nvToolsExt.h>
+#include <config.h>
 
 // CUDA kernel function to add two vectors
 __global__ void addGPU(const float *A, const float *B, float *C, int numElements) {
@@ -34,9 +35,23 @@ void addCPU(const float *A, const float *B, float *C, int n) {
     }
 }
 
-int main() {
+int main(int argc, char** argv) {
+    // Load configuration from JSON file
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <config.json>\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    Config config = Config::loadFromFile(argv[1]);
+    if (!config.isValid()) {
+        return EXIT_FAILURE;
+    }
+
+    // Print configuration as single-line JSON
+    printf("config:%s\n", config.toJson().dump().c_str());
+
     // Vector size and memory size
-    int numElements = 500000;
+    int numElements = config.vector_size;
     size_t size = numElements * sizeof(float);
 
     printf("Vector addition of %d elements\n", numElements);
@@ -66,12 +81,12 @@ int main() {
     CUDA_CHECK(cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice));
 
     // Launch the CUDA kernel
-    int threadsPerBlock = 256;
+    int threadsPerBlock = config.threads_per_block;
     int blocksPerGrid = (numElements + threadsPerBlock - 1) / threadsPerBlock;
     printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
 
     // Launch kernel and check correctness.
-    if (true) {
+    if (config.validate) {
         addGPU<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost));
@@ -89,11 +104,14 @@ int main() {
     }
 
     // GPU perf.
-    cudaEvent_t start, stop;
-    CUDA_CHECK(cudaEventCreate(&start));
-    CUDA_CHECK(cudaEventCreate(&stop));
+    if (config.profile) {
+        cudaEvent_t start, stop;
+        CUDA_CHECK(cudaEventCreate(&start));
+        CUDA_CHECK(cudaEventCreate(&stop));
 
-    {
+        double bytes_transferred = 3.0 * size;  // Read A, B and write C
+
+        {
         long long gpu_start = time_ns();
         long long cuda_best = LONG_MAX;
         int interation_counter = 0;
@@ -106,7 +124,7 @@ int main() {
             CUDA_CHECK(cudaGetLastError());
             CUDA_CHECK(cudaEventSynchronize(stop));
             float ms = 0;
-            CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop) );
+            CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
             long long us = round(ms * 1000);
             if (us >= cuda_best) {
                 keep_counter--;
@@ -116,16 +134,15 @@ int main() {
             }
             if (time_ns() - gpu_start > 10 * 1000000LL) break;
         }
-        printf("GPU: %lld us from %d iterations\n", cuda_best, interation_counter);
-    }
+            double gpu_throughput = bytes_transferred / (cuda_best / 1e6) / (1024.0 * 1024.0 * 1024.0);  // GiB/s
+            printf("GPU: %lld us from %d iterations (%.2f GiB/s)\n", cuda_best, interation_counter, gpu_throughput);
+        }
 
+        CUDA_CHECK(cudaEventDestroy(start));
+        CUDA_CHECK(cudaEventDestroy(stop));
 
-    CUDA_CHECK(cudaEventDestroy(start));
-    CUDA_CHECK(cudaEventDestroy(stop));
-
-
-    // CPU perf.
-    {
+        // CPU perf.
+        {
         long long cpu_start = time_ns();
         long long cpu_best_us = LONG_MAX;
         int iterations_counter = 0;
@@ -144,8 +161,10 @@ int main() {
             }
             if (e - cpu_start > 10 * 1000000LL) break;
         }
-        printf("CPU: %lld us from %d iterations\n",
-               cpu_best_us, iterations_counter);
+            double cpu_throughput = bytes_transferred / (cpu_best_us / 1e6) / (1024.0 * 1024.0 * 1024.0);  // GiB/s
+            printf("CPU: %lld us from %d iterations (%.2f GiB/s)\n",
+                   cpu_best_us, iterations_counter, cpu_throughput);
+        }
     }
 
     // Free device memory

@@ -1,0 +1,6 @@
+{
+  "vector_size": 500000,
+  "validate": true,
+  "profile": true,
+  "threads_per_block": 256
+}

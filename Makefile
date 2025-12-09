@@ -3,7 +3,7 @@ NVCC = nvcc
 # Auto-detect GPU architecture
 ARCH := $(shell $(NVCC) -run ./detect_arch.cu 2>/dev/null || echo "sm_75")
 
-NVCC_FLAGS = -O3 -arch=$(ARCH) -Ilib -Xcompiler -Wno-error --no-device-link
+NVCC_FLAGS = -O3 -arch=$(ARCH) -Ilib -Iexternal -Xcompiler -Wno-error --no-device-link
 NVCC_DP_FLAGS = -O3 -arch=$(ARCH) -Xcompiler -Wno-error --no-device-link
 NVCC_PROF_FLAGS = -O3 -arch=$(ARCH) -lcupti -lnvToolsExt -Xcompiler -Wno-error --no-device-link
 NVCC_EXT_FLAGS = -O3 -arch=$(ARCH) -ldl -lpthread -Xcompiler -Wno-error --no-device-link
