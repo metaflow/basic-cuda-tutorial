@@ -100,7 +100,7 @@ int main(int argc, char** argv) {
                 exit(EXIT_FAILURE);
             }
         }
-        printf("Test PASSED\n");
+        printf("valid:true\n");
     }
 
     // GPU perf.
@@ -136,6 +136,13 @@ int main(int argc, char** argv) {
         }
             double gpu_throughput = bytes_transferred / (cuda_best / 1e6) / (1024.0 * 1024.0 * 1024.0);  // GiB/s
             printf("GPU: %lld us from %d iterations (%.2f GiB/s)\n", cuda_best, interation_counter, gpu_throughput);
+
+            json gpu_perf = {
+                {"time_us", cuda_best},
+                {"iterations", interation_counter},
+                {"throughput_gib_s", std::round(gpu_throughput * 1000.0) / 1000.0}
+            };
+            printf("gpu_perf:%s\n", gpu_perf.dump().c_str());
         }
 
         CUDA_CHECK(cudaEventDestroy(start));
@@ -164,6 +171,13 @@ int main(int argc, char** argv) {
             double cpu_throughput = bytes_transferred / (cpu_best_us / 1e6) / (1024.0 * 1024.0 * 1024.0);  // GiB/s
             printf("CPU: %lld us from %d iterations (%.2f GiB/s)\n",
                    cpu_best_us, iterations_counter, cpu_throughput);
+
+            json cpu_perf = {
+                {"time_us", cpu_best_us},
+                {"iterations", iterations_counter},
+                {"throughput_gib_s", std::round(cpu_throughput * 1000.0) / 1000.0}
+            };
+            printf("cpu_perf:%s\n", cpu_perf.dump().c_str());
         }
     }
 
