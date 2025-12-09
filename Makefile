@@ -31,7 +31,7 @@ detect_arch:
 		echo "2. Or manually set architecture in Makefile"; \
 	fi
 
-01-vector-addition: 01-vector-addition.cu
+01-vector-addition: 01-vector-addition.cu lib/config.h lib/utils.cuh
 	$(NVCC) $(NVCC_FLAGS) -o 01-vector-addition 01-vector-addition.cu
 
 02-ptx-assembly: 02-ptx-assembly.cu

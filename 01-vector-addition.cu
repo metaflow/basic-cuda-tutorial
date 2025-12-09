@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
     }
 
     // Print configuration as single-line JSON
-    printf("config:%s\n", config.toJson().dump().c_str());
+    printf("'config':%s\n", config.toJson().dump().c_str());
 
     // Vector size and memory size
     int numElements = config.vector_size;
@@ -100,11 +100,11 @@ int main(int argc, char** argv) {
                 exit(EXIT_FAILURE);
             }
         }
-        printf("valid:true\n");
+        printf("'valid':true\n");
     }
 
     // GPU perf.
-    if (config.profile) {
+    if (config.profile_gpu) {
         cudaEvent_t start, stop;
         CUDA_CHECK(cudaEventCreate(&start));
         CUDA_CHECK(cudaEventCreate(&stop));
@@ -116,6 +116,7 @@ int main(int argc, char** argv) {
         long long cuda_best = LONG_MAX;
         int interation_counter = 0;
         int keep_counter = 10;
+        long long timeout_ns = config.timeout_s * 1000000000LL;
         while (true) {
             interation_counter++;
             CUDA_CHECK(cudaEventRecord(start));
@@ -132,7 +133,7 @@ int main(int argc, char** argv) {
             } else {
                 cuda_best = us;
             }
-            if (time_ns() - gpu_start > 10 * 1000000LL) break;
+            if (time_ns() - gpu_start > timeout_ns) break;
         }
             double gpu_throughput = bytes_transferred / (cuda_best / 1e6) / (1024.0 * 1024.0 * 1024.0);  // GiB/s
             printf("GPU: %lld us from %d iterations (%.2f GiB/s)\n", cuda_best, interation_counter, gpu_throughput);
@@ -142,18 +143,22 @@ int main(int argc, char** argv) {
                 {"iterations", interation_counter},
                 {"throughput_gib_s", std::round(gpu_throughput * 1000.0) / 1000.0}
             };
-            printf("gpu_perf:%s\n", gpu_perf.dump().c_str());
+            printf("'gpu_perf':%s\n", gpu_perf.dump().c_str());
         }
 
         CUDA_CHECK(cudaEventDestroy(start));
         CUDA_CHECK(cudaEventDestroy(stop));
+    }
 
-        // CPU perf.
-        {
+    // CPU perf.
+    if (config.profile_cpu) {
+        double bytes_transferred = 3.0 * size;  // Read A, B and write C
+
         long long cpu_start = time_ns();
         long long cpu_best_us = LONG_MAX;
         int iterations_counter = 0;
         int keep_counter = 10;
+        long long timeout_ns = config.timeout_s * 1000000000LL;
         while (true) {
             iterations_counter++;
             auto s = time_ns();
@@ -166,19 +171,18 @@ int main(int argc, char** argv) {
             } else {
                 cpu_best_us = us;
             }
-            if (e - cpu_start > 10 * 1000000LL) break;
+            if (e - cpu_start > timeout_ns) break;
         }
-            double cpu_throughput = bytes_transferred / (cpu_best_us / 1e6) / (1024.0 * 1024.0 * 1024.0);  // GiB/s
-            printf("CPU: %lld us from %d iterations (%.2f GiB/s)\n",
-                   cpu_best_us, iterations_counter, cpu_throughput);
+        double cpu_throughput = bytes_transferred / (cpu_best_us / 1e6) / (1024.0 * 1024.0 * 1024.0);  // GiB/s
+        printf("CPU: %lld us from %d iterations (%.2f GiB/s)\n",
+               cpu_best_us, iterations_counter, cpu_throughput);
 
-            json cpu_perf = {
-                {"time_us", cpu_best_us},
-                {"iterations", iterations_counter},
-                {"throughput_gib_s", std::round(cpu_throughput * 1000.0) / 1000.0}
-            };
-            printf("cpu_perf:%s\n", cpu_perf.dump().c_str());
-        }
+        json cpu_perf = {
+            {"time_us", cpu_best_us},
+            {"iterations", iterations_counter},
+            {"throughput_gib_s", std::round(cpu_throughput * 1000.0) / 1000.0}
+        };
+        printf("'cpu_perf':%s\n", cpu_perf.dump().c_str());
     }
 
     // Free device memory
