@@ -4,6 +4,13 @@
 
 Do not do "additonal" work that user have not asked, such as adding extra features.
 
+## Python Environment
+
+This project uses a uv virtual environment. Before running Python scripts:
+```bash
+source uvenv-cuda/bin/activate
+```
+
 ## Repository Overview
 
 This is a CUDA tutorial collection with examples covering GPU programming fundamentals, PTX assembly, memory optimization, neural networks, profiling, and low-latency techniques for ML/AI workloads.

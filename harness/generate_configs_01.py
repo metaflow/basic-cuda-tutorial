@@ -21,13 +21,18 @@ def generate_configs():
     # Generate configs with different vector sizes (default threads)
     for size in vector_sizes:
         config = {
-            "vector_size": size,
-            "validate": True,
-            "profile_gpu": True,
-            "profile_cpu": True,
-            "threads_per_block": 256,
-            "timeout_s": 10,
-            "experiment": {"name": "vector_size_sweep", "threads": 256}
+            "executable": {
+                "make_target": "01-vector-addition"
+            },
+            "runtime": {
+                "vector_size": size,
+                "validate": True,
+                "profile_gpu": True,
+                "profile_cpu": True,
+                "threads_per_block": 256,
+                "timeout_s": 10,
+                "experiment": {"name": "vector_size_sweep", "threads": 256}
+            }
         }
         print(json.dumps(config))
 
@@ -39,13 +44,18 @@ def generate_configs():
     # Generate configs testing different thread counts (medium vector size)
     for threads in threads_per_block_options:
         config = {
-            "vector_size": 1000000,
-            "validate": True,
-            "profile_gpu": True,
-            "profile_cpu": True,
-            "threads_per_block": threads,
-            "timeout_s": 10,
-            "experiment": {"name": "threads_sweep", "size": 1000000}
+            "executable": {
+                "make_target": "01-vector-addition"
+            },
+            "runtime": {
+                "vector_size": 1000000,
+                "validate": True,
+                "profile_gpu": True,
+                "profile_cpu": True,
+                "threads_per_block": threads,
+                "timeout_s": 10,
+                "experiment": {"name": "threads_sweep", "size": 1000000}
+            }
         }
         print(json.dumps(config))
 

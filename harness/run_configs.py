@@ -7,160 +7,106 @@ benchmark for each config, and outputs combined results as JSON lines.
 """
 
 import json
-import subprocess
 import sys
-import tempfile
-import os
-import re
+import argparse
 from pathlib import Path
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
+from rich.console import Console
 
-
-def parse_output_line(line):
-    """
-    Parse output lines matching the pattern "'<key>':<json>"
-
-    Returns (key, value) tuple or None if line doesn't match pattern.
-    """
-    # Match pattern: 'key' (single-quoted), colon, then JSON
-    match = re.match(r"^'(\w+)':(.+)$", line)
-    if not match:
-        return None
-
-    key = match.group(1)
-    value_str = match.group(2).strip()
-
-    # Try to parse as JSON
-    try:
-        value = json.loads(value_str)
-        return (key, value)
-    except json.JSONDecodeError:
-        # If it's not valid JSON, return as string
-        return (key, value_str)
-
-
-def run_benchmark(config, executable="./01-vector-addition", build_dir=None):
-    """
-    Run benchmark with the given configuration.
-
-    Args:
-        config: Dictionary with configuration parameters
-        executable: Path to the executable to run
-        build_dir: Directory containing the executable (default: parent of harness)
-
-    Returns:
-        Dictionary containing config and parsed output values
-    """
-    # Determine working directory
-    if build_dir is None:
-        # Default to parent directory of harness
-        build_dir = Path(__file__).parent.parent
-
-    # Create temporary config file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-        json.dump(config, f)
-        config_file = f.name
-
-    try:
-        # Build the project (suppress output unless there's an error)
-        make_result = subprocess.run(
-            ['make', '01-vector-addition'],
-            cwd=build_dir,
-            capture_output=True,
-            text=True
-        )
-
-        if make_result.returncode != 0:
-            return {
-                "config": config,
-                "error": "build_failed",
-                "stderr": make_result.stderr
-            }
-
-        # Run the executable
-        result = subprocess.run(
-            [executable, config_file],
-            cwd=build_dir,
-            capture_output=True,
-            text=True,
-            timeout=120
-        )
-
-        if result.returncode != 0:
-            return {
-                "config": config,
-                "error": "execution_failed",
-                "returncode": result.returncode,
-                "stderr": result.stderr
-            }
-
-        # Parse output
-        output_data = {"config": config}
-
-        for line in result.stdout.split('\n'):
-            line = line.strip()
-            if not line:
-                continue
-
-            parsed = parse_output_line(line)
-            if parsed:
-                key, value = parsed
-                output_data[key] = value
-
-        return output_data
-
-    except subprocess.TimeoutExpired:
-        return {
-            "config": config,
-            "error": "timeout"
-        }
-    except Exception as e:
-        return {
-            "config": config,
-            "error": "exception",
-            "message": str(e)
-        }
-    finally:
-        # Clean up temporary config file
-        try:
-            os.unlink(config_file)
-        except:
-            pass
+from benchmark_lib import (
+    run_benchmark,
+    load_existing_results,
+    format_config_summary
+)
 
 
 def main():
     """
-    Read configs from stdin (or file), run benchmarks, output results to stdout.
+    Read configs from stdin, run benchmarks, output results to file.
 
     Usage:
-        python3 run_configs.py < configs.jsonl > results.jsonl
-        python3 generate_configs.py | python3 run_configs.py > results.jsonl
+        python3 run_configs.py -o results.jsonl < configs.jsonl
+        python3 generate_configs.py | python3 run_configs.py -o results.jsonl
     """
+    parser = argparse.ArgumentParser(description='Run CUDA benchmarks with configurations')
+    parser.add_argument('-o', '--output', required=True, type=Path,
+                        help='Output file for results (JSONL format)')
+    args = parser.parse_args()
 
     # Determine build directory (parent of harness directory)
     build_dir = Path(__file__).parent.parent
 
-    # Read configs from stdin
-    for line_num, line in enumerate(sys.stdin, 1):
+    # Load existing results to avoid re-running
+    existing_results = load_existing_results(args.output)
+
+    console = Console()
+
+    # First pass: count total configs
+    configs = []
+    for line in sys.stdin:
         line = line.strip()
         if not line:
             continue
-
         try:
             config = json.loads(line)
+            configs.append(config)
         except json.JSONDecodeError as e:
-            print(json.dumps({
-                "error": "invalid_config",
-                "line_num": line_num,
-                "message": str(e)
-            }), file=sys.stderr)
+            console.print(f"[red]Error parsing config:[/red] {e}", file=sys.stderr)
             continue
 
-        # Run benchmark
-        result = run_benchmark(config, build_dir=build_dir)
+    total_configs = len(configs)
+    skipped = 0
+    run = 0
+    errors = 0
 
-        # Output result as single JSON line
-        print(json.dumps(result))
-        sys.stdout.flush()  # Ensure output is written immediately
+    # Open output file in append mode
+    with open(args.output, 'a') as outfile:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
+            console=console
+        ) as progress:
+
+            task = progress.add_task("[cyan]Running benchmarks...", total=total_configs)
+
+            for config in configs:
+                # Check if this config already exists
+                config_key = json.dumps(config, sort_keys=True)
+
+                if config_key in existing_results:
+                    skipped += 1
+                    progress.update(task, advance=1,
+                                    description=f"[yellow]Skipped:[/yellow] {format_config_summary(config)}")
+                    continue
+
+                # Update progress with current config
+                run += 1
+                progress.update(task, description=f"[green]Running:[/green] {format_config_summary(config)}")
+
+                # Run benchmark
+                result = run_benchmark(config, build_dir=build_dir)
+
+                # Check for errors
+                if 'error' in result:
+                    errors += 1
+                    progress.update(task, description=f"[red]Error:[/red] {format_config_summary(config)}")
+
+                # Write result to file
+                outfile.write(json.dumps(result) + '\n')
+                outfile.flush()
+
+                progress.update(task, advance=1)
+
+    # Print summary
+    console.print(f"\n[bold]Summary:[/bold]")
+    console.print(f"  Total configs: {total_configs}")
+    console.print(f"  [green]Executed: {run}[/green]")
+    console.print(f"  [yellow]Skipped (already done): {skipped}[/yellow]")
+    console.print(f"  [red]Errors: {errors}[/red]")
+    console.print(f"  Results written to: [cyan]{args.output}[/cyan]")
 
 
 if __name__ == "__main__":
