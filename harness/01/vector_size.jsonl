@@ -1,0 +1,2 @@
+{"executable": {"make_target": "01-vector-addition"}, "runtime": {"vector_size": 1024, "validate": true, "profile_gpu": true, "profile_cpu": false, "threads_per_block": 256, "timeout_s": 10, "experiment": {"name": "vector_size_sweep", "threads": 256}}}
+{"executable": {"make_target": "01-vector-addition"}, "runtime": {"vector_size": 1073741824, "validate": true, "profile_gpu": true, "profile_cpu": false, "threads_per_block": 256, "timeout_s": 10, "experiment": {"name": "vector_size_sweep", "threads": 256}}}

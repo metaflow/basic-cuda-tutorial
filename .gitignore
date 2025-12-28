@@ -88,3 +88,5 @@ ptx_demo
 simple_ptx_demo
 
 15-opencl-vector-addition
+
+*.log

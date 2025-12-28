@@ -112,38 +112,42 @@ int main(int argc, char** argv) {
         double bytes_transferred = 3.0 * size;  // Read A, B and write C
 
         {
-        long long gpu_start = time_ns();
-        long long cuda_best = LONG_MAX;
-        int interation_counter = 0;
-        int keep_counter = 10;
-        long long timeout_ns = config.timeout_s * 1000000000LL;
-        while (true) {
+          long long gpu_start = time_ns();
+          long long cuda_best_us = LONG_MAX;
+          int interation_counter = 0;
+          int keep_counter = 3;
+          long long timeout_ns = config.timeout_s * 1000000000LL;
+          while (true) {
             interation_counter++;
             CUDA_CHECK(cudaEventRecord(start));
-            addGPU<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements);
+            addGPU<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C,
+                                                       numElements);
             CUDA_CHECK(cudaEventRecord(stop));
             CUDA_CHECK(cudaGetLastError());
             CUDA_CHECK(cudaEventSynchronize(stop));
             float ms = 0;
             CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
             long long us = round(ms * 1000);
-            if (us >= cuda_best) {
-                keep_counter--;
-                if (keep_counter < 0) break;
+            if (us >= cuda_best_us) {
+              // Stop when we don't see improvement for multiple iterations.
+              keep_counter--;
+              if (keep_counter < 0) break;
             } else {
-                cuda_best = us;
+              cuda_best_us = us;
+              keep_counter = 3;
             }
             if (time_ns() - gpu_start > timeout_ns) break;
-        }
-            double gpu_throughput = bytes_transferred / (cuda_best / 1e6) / (1024.0 * 1024.0 * 1024.0);  // GiB/s
-            printf("GPU: %lld us from %d iterations (%.2f GiB/s)\n", cuda_best, interation_counter, gpu_throughput);
+          }
+          double gpu_throughput = bytes_transferred * 1e6 / cuda_best_us /
+                                  (1024.0 * 1024.0 * 1024.0);  // GiB/s
+          printf("GPU: %lld us from %d iterations (%.2f GiB/s)\n", cuda_best_us,
+                 interation_counter, gpu_throughput);
 
-            json gpu_perf = {
-                {"time_us", cuda_best},
-                {"iterations", interation_counter},
-                {"throughput_gib_s", std::round(gpu_throughput * 1000.0) / 1000.0}
-            };
-            printf("'gpu_perf':%s\n", gpu_perf.dump().c_str());
+          json gpu_perf = {{"time_us", cuda_best_us},
+                           {"iterations", interation_counter},
+                           {"throughput_gib_s",
+                            std::round(gpu_throughput * 1000.0) / 1000.0}};
+          printf("'gpu_perf':%s\n", gpu_perf.dump().c_str());
         }
 
         CUDA_CHECK(cudaEventDestroy(start));
@@ -157,7 +161,7 @@ int main(int argc, char** argv) {
         long long cpu_start = time_ns();
         long long cpu_best_us = LONG_MAX;
         int iterations_counter = 0;
-        int keep_counter = 10;
+        int keep_counter = 3;
         long long timeout_ns = config.timeout_s * 1000000000LL;
         while (true) {
             iterations_counter++;
@@ -169,6 +173,7 @@ int main(int argc, char** argv) {
                 keep_counter--;
                 if (keep_counter < 0) break;
             } else {
+                keep_counter = 3;
                 cpu_best_us = us;
             }
             if (e - cpu_start > timeout_ns) break;
