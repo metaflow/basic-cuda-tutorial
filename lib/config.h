@@ -10,6 +10,7 @@ using json = nlohmann::json;
 
 struct Config {
     long long vector_size = 500000;
+    int stride = 1;
     bool validate = true;
     bool profile_gpu = false;
     bool profile_cpu = false;
@@ -45,6 +46,7 @@ struct Config {
         }
 
         cfg.vector_size = j["vector_size"];
+        cfg.stride = j["stride"];
         cfg.validate = j["validate"];
         cfg.profile_gpu = j["profile_gpu"];
         cfg.profile_cpu = j["profile_cpu"];
@@ -69,6 +71,10 @@ struct Config {
             fprintf(stderr, "Error: timeout_s must be positive\n");
             return false;
         }
+        if (stride <= 0) {
+            fprintf(stderr, "Error: stride must be positive\n");
+            return false;
+        }
         return true;
     }
 
@@ -76,6 +82,7 @@ struct Config {
     json toJson() const {
         return json{
             {"vector_size", vector_size},
+            {"stride", stride},
             {"validate", validate},
             {"profile_gpu", profile_gpu},
             {"profile_cpu", profile_cpu},

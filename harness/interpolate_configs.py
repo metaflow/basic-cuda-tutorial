@@ -452,6 +452,61 @@ def create_plot(results, x_axis, y_axis, width=80, height=20, x_log=False, y_log
     return ansi_escape.sub('', plot_str)
 
 
+def create_markdown_table(results, x_axis, y_axis):
+    """
+    Create a markdown table from results, sorted by x-axis.
+
+    Args:
+        results: List of result dictionaries
+        x_axis: Key to use for x-axis (e.g., "config.runtime.vector_size")
+        y_axis: Key to use for y-axis (e.g., "gpu_perf.throughput_gib_s")
+
+    Returns:
+        String containing markdown table
+    """
+    # Extract valid points
+    points = []
+    for result in results:
+        # Skip error results
+        if 'error' in result:
+            continue
+
+        x_val = get_value_from_path(result, x_axis)
+        y_val = get_value_from_path(result, y_axis)
+
+        if x_val is not None and y_val is not None:
+            points.append((x_val, y_val))
+
+    if not points:
+        return f"No valid data points for x={x_axis}, y={y_axis}\n"
+
+    # Sort by x value
+    points.sort(key=lambda p: p[0])
+
+    # Build markdown table
+    lines = []
+    lines.append(f"# Results: {y_axis} vs {x_axis}\n")
+    lines.append("")
+    lines.append(f"| {x_axis} | {y_axis} |")
+    lines.append(f"|{'-' * (len(x_axis) + 2)}|{'-' * (len(y_axis) + 2)}|")
+
+    for x_val, y_val in points:
+        # Format numbers appropriately
+        if isinstance(x_val, float):
+            x_str = f"{x_val:.6g}"
+        else:
+            x_str = str(x_val)
+
+        if isinstance(y_val, float):
+            y_str = f"{y_val:.6g}"
+        else:
+            y_str = str(y_val)
+
+        lines.append(f"| {x_str} | {y_str} |")
+
+    return "\n".join(lines) + "\n"
+
+
 def main():
     """
     Read configs from stdin, run benchmarks, output results to file with live plotting.
@@ -466,6 +521,8 @@ def main():
     parser = argparse.ArgumentParser(description='Run CUDA benchmarks with real-time plotting')
     parser.add_argument('-o', '--output', required=True, type=Path,
                         help='Output file for results (JSONL format)')
+    parser.add_argument('-omd', '--output-markdown', type=Path,
+                        help='Optional output file for markdown table of results')
     parser.add_argument('-x', '--x-axis', required=True,
                         help='Config/result field for x-axis (e.g., "config.runtime.vector_size")')
     parser.add_argument('-y', '--y-axis', required=True,
@@ -618,10 +675,23 @@ def main():
                     run += 1
                     is_auto = run > (initial_count - skipped)
                     status_prefix = "[yellow]AUTO[/yellow]" if is_auto else "[cyan]INIT[/cyan]"
-                    current_status = f"{status_prefix} [{len(all_results)+1}/{args.max_results}] {format_config_summary(config)}"
-                    progress.update(task, description=current_status)
                     config_type = "AUTO" if is_auto else "INIT"
+
+                    # Extract x value for display
                     x_val = get_value_from_path(config, args.x_axis.replace('config.', '') if args.x_axis.startswith('config.') else args.x_axis)
+
+                    # Format x value for display
+                    if isinstance(x_val, float):
+                        x_display = f"{x_val:.6g}"
+                    else:
+                        x_display = str(x_val)
+
+                    # Get short x-axis name (last component after dots)
+                    x_name = args.x_axis.split('.')[-1]
+
+                    current_status = f"{status_prefix} [{len(all_results)+1}/{args.max_results}] {x_name}={x_display}"
+                    progress.update(task, description=current_status)
+
                     logger.info(f"[Iteration {iteration}] RUNNING {config_type} config")
                     logger.info(f"  {args.x_axis} = {x_val}")
                     logger.info(f"  Results so far: {len(all_results)}/{args.max_results}")
@@ -675,6 +745,14 @@ def main():
     plot_text = create_plot(all_results, args.x_axis, args.y_axis, args.plot_width, args.plot_height,
                            args.x_log, args.y_log)
     console.print(plot_text)
+
+    # Write markdown table if requested
+    if args.output_markdown:
+        markdown_table = create_markdown_table(all_results, args.x_axis, args.y_axis)
+        with open(args.output_markdown, 'w') as md_file:
+            md_file.write(markdown_table)
+        console.print(f"\n  Markdown table written to: [cyan]{args.output_markdown}[/cyan]")
+        logger.info(f"Markdown table written to: {args.output_markdown}")
 
 
 if __name__ == "__main__":

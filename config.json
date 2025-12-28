@@ -1,6 +1,12 @@
 {
-  "vector_size": 500000,
+  "vector_size": 14107900,
+  "stride": 2,
   "validate": true,
-  "profile": true,
-  "threads_per_block": 256
+  "profile_gpu": true,
+  "profile_cpu": false,
+  "threads_per_block": 256,
+  "timeout_s": 10,
+  "experiment": {
+    "name": "stride"
+  }
 }

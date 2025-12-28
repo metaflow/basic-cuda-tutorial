@@ -19,13 +19,13 @@
 #include <config.h>
 
 // CUDA kernel function to add two vectors
-__global__ void addGPU(const float *A, const float *B, float *C, int numElements) {
-    // Get the unique thread ID, which is the index in the vector
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-
-    // Make sure we don't go out of bounds
-    if (i < numElements) {
-        C[i] = A[i] + B[i];
+__global__ void addGPU(const float *A, const float *B, float *C, int numElements, int stride) {
+    int off = blockIdx.x % stride;
+    int tile_idx = blockIdx.x / stride;
+    int tile_off = blockDim.x * tile_idx * stride;
+    int x = tile_off + threadIdx.x * stride + off;
+    if (x < numElements) {
+        C[x] = A[x] + B[x];
     }
 }
 
@@ -82,12 +82,13 @@ int main(int argc, char** argv) {
 
     // Launch the CUDA kernel
     int threadsPerBlock = config.threads_per_block;
-    int blocksPerGrid = (numElements + threadsPerBlock - 1) / threadsPerBlock;
+    int stride = config.stride;
+    int blocksPerGrid = (numElements + (threadsPerBlock * stride) - 1) / (threadsPerBlock * stride) * stride;
     printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
 
     // Launch kernel and check correctness.
     if (config.validate) {
-        addGPU<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements);
+        addGPU<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, numElements, config.stride);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost));
 
@@ -121,7 +122,7 @@ int main(int argc, char** argv) {
             interation_counter++;
             CUDA_CHECK(cudaEventRecord(start));
             addGPU<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C,
-                                                       numElements);
+                                                       numElements, config.stride);
             CUDA_CHECK(cudaEventRecord(stop));
             CUDA_CHECK(cudaGetLastError());
             CUDA_CHECK(cudaEventSynchronize(stop));
